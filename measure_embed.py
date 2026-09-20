@@ -55,6 +55,20 @@ def main():
     json.dump(results, open(os.path.join(HERE, 'docs/result-embed.json'), 'w'), indent=1)
 
 
+def peek():
+    """.npy 는 NumPy 바이너리다. 에디터로 열면 깨진다. 내용을 보려면 이걸 쓴다."""
+    import numpy as np
+    for name in ('vec-queries', 'vec-articles'):
+        p = os.path.join(HERE, f'data/{name}.npy')
+        if not os.path.exists(p):
+            print(f'{name}.npy 없음 — measure_embed.py 실행 필요'); continue
+        v = np.load(p)
+        print(f'{name}.npy  {v.shape[0]}개 × {v.shape[1]}차원  {v.dtype}  '
+              f'{os.path.getsize(p)//1024}KB')
+        print(f'  첫 벡터 앞 5개: {np.round(v[0][:5], 4).tolist()}')
+        print(f'  노름(정규화 확인): {float(np.linalg.norm(v[0])):.4f}')
+
+
 def test():
     arts = load_articles()
     assert len(arts) == 493, len(arts)
@@ -66,4 +80,6 @@ def test():
 
 
 if __name__ == '__main__':
-    test() if '--test' in sys.argv else main()
+    if '--test' in sys.argv: test()
+    elif '--peek' in sys.argv: peek()
+    else: main()

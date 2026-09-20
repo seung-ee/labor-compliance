@@ -87,7 +87,9 @@ def snap_path(law_id, ef, mst):
 def save(snap):
     os.makedirs(os.path.join(LAWS, snap['법령ID']), exist_ok=True)
     with open(snap_path(snap['법령ID'], snap['시행일'], snap['MST']), 'w') as f:
-        json.dump(snap, f, ensure_ascii=False)
+        # indent 를 준다. 사람이 열어서 읽는 파일이다.
+        # 한 줄로 쓰면 조문 하나 확인하려고 8천 칸짜리 줄을 가로로 스크롤해야 한다.
+        json.dump(snap, f, ensure_ascii=False, indent=1)
 
 
 def diff(old, new):
@@ -131,7 +133,8 @@ def rebuild_views():
             t = re.match(r'제\d+조(?:의\d+)?\(([^)]*)\)', txt)
             idx.append(f"제{jo}조" + (f"의{ji}" if ji != '0' else '') + (f" {t.group(1)}" if t else ''))
         idx.append('')
-    json.dump(corpus, open(os.path.join(HERE, 'data/corpus.json'), 'w'), ensure_ascii=False)
+    json.dump(corpus, open(os.path.join(HERE, 'data/corpus.json'), 'w'),
+              ensure_ascii=False, indent=1)
     open(os.path.join(HERE, 'data/title-index.txt'), 'w').write('\n'.join(idx))
     n = sum(len(v) for v in corpus.values())
     print(f'  corpus.json / title-index.txt 재생성 — 법령 {len(corpus)}개, 조문 {n}개')

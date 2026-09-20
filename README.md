@@ -27,6 +27,15 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 
 `config/`는 재생성이 안 된다. `data/`에 두면 클론할 때 사라진다.
 
+생성하는 JSON은 **들여쓰기를 준다.** 사람이 열어서 읽는 파일이다.
+한 줄로 쓰면 조문 하나 보려고 8천 칸짜리 줄을 가로로 스크롤해야 한다.
+
+`data/*.npy`는 NumPy 바이너리라 에디터로 못 연다. 내용을 보려면:
+
+```bash
+./.venv/bin/python measure_embed.py --peek
+```
+
 ## 스크립트
 
 | 파일 | 하는 일 |
