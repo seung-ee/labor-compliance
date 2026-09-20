@@ -363,6 +363,23 @@ data/
 2027-06-10 개정에는 **근로감독관 → 노동감독관 일괄 개칭**이 들어 있다. 사장님은
 계속 "근로감독관"이라 부를 테니 **새 용어 격차가 생긴다.** phrase_map에 미리 넣을 것.
 
+## 저장소
+
+`https://github.com/seung-ee/labor-compliance` — **공개**다.
+
+`data/`는 커밋하지 않는다. 재생성되고(`update_laws.py --init`), 시점이 박혀 금방
+낡고, **법제처 데이터를 공개 저장소에 싣는 것은 재배포에 해당할 수 있다.**
+상업 이용 문의 전까지는 코드만 올린다.
+
+`scripts/pre-commit`이 비밀값 커밋을 막는다. 클론 후 설치가 필요하다:
+`ln -sf ../../scripts/pre-commit .git/hooks/pre-commit`
+
+⚠ **법제처 API는 응답 URL에 `OC` 키를 그대로 넣어 돌려준다.** 로그나 JSON을
+커밋할 때 새기 쉬운 경로다. 훅이 `.env.local`의 `LAW_OC` 값을 읽어 이것도 검사한다.
+
+⚠ 비밀값 검사에 `grep -rl`을 쓰지 말 것. **숨김 파일을 건너뛰어 `.env.local`을 놓친다.**
+`git grep`(히스토리)이나 `find … -exec grep`(작업 트리)을 쓴다.
+
 ## 기록 관례 — 노션
 
 작업과 결정을 노션에 남긴다. **용어는 "사이드 이펙트"가 아니라 아래를 쓴다.**
@@ -370,6 +387,7 @@ data/
 
 | 대상 | URL |
 |---|---|
+| GitHub (공개) | https://github.com/seung-ee/labor-compliance |
 | 포트폴리오 페이지 | https://app.notion.com/p/3e14112a129381fb978ad5a6226f95fe |
 | 개발 로그 DB | https://app.notion.com/p/d57213b2cf7441c3acf46785458ca85e |
 | 용어 정리 | https://app.notion.com/p/3e14112a12938114b231d7c4baf88524 |
