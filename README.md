@@ -11,6 +11,7 @@
 python3 -m venv .venv
 ./.venv/bin/pip install anthropic sentence-transformers
 
+ln -sf ../../scripts/pre-commit .git/hooks/pre-commit   # 비밀값 커밋 차단 (필수)
 cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 ./.venv/bin/python update_laws.py --init    # 법령 스냅샷 수집 (~2분)
 ./.venv/bin/python build_matrix.py          # 5인 미만 적용 매트릭스 생성
@@ -35,6 +36,19 @@ for f in build_matrix update_laws measure measure_embed measure_route; do
   ./.venv/bin/python $f.py --test
 done
 ```
+
+## 비밀값 관리
+
+공개 저장소다. `.gitignore`만 믿지 않는다.
+
+- `.env.local`에만 키를 둔다. `.env*`는 `.gitignore`가 막는다 (`.env.example` 제외)
+- `scripts/pre-commit`이 `git add` 한 뒤에도 막는다 — `.env` 계열 파일,
+  `sk-ant-…`·`ghp_…`·AWS 키·개인키 패턴, 그리고 `.env.local`의 `LAW_OC` 값이
+  커밋 내용에 섞였는지 검사한다
+- **법제처 API는 응답 URL에 `OC` 키를 그대로 넣어 돌려준다.** 로그나 JSON을
+  커밋할 때 새기 쉬운 경로라서 훅이 이것도 본다
+
+클론한 뒤 위 `ln -sf` 한 줄을 꼭 실행할 것. 훅은 저장소에 따라오지 않는다.
 
 ## 설계 맥락
 

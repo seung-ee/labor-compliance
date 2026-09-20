@@ -1,0 +1,40 @@
+#!/bin/sh
+# 비밀값이 커밋에 섞여 들어가는 것을 막는다.
+# .gitignore는 "실수로 add 하지 않는 한" 지켜준다. 이 훅은 add 한 뒤에도 막는다.
+# 설치: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+fail=0
+
+# 1) .env 계열은 .env.example 말고는 전부 차단
+for f in $(git diff --cached --name-only --diff-filter=ACM); do
+	case "$f" in
+		.env.example) ;;
+		.env|.env.*|*/.env|*/.env.*)
+			echo "차단: $f — .env 파일은 커밋할 수 없다"; fail=1 ;;
+	esac
+done
+
+# 2) 스테이징된 내용에서 비밀값 패턴 검색
+#    git diff --cached 로 본다. 작업 트리가 아니라 '커밋될 내용'이 대상이다.
+patterns='sk-ant-api[0-9]*-[A-Za-z0-9_-]\{24,\}
+ghp_[A-Za-z0-9]\{30,\}
+github_pat_[A-Za-z0-9_]\{30,\}
+AKIA[0-9A-Z]\{16\}
+-----BEGIN [A-Z ]*PRIVATE KEY-----'
+echo "$patterns" | while IFS= read -r p; do
+	[ -z "$p" ] && continue
+	if git diff --cached -U0 | grep -q "^+.*$p"; then
+		echo "차단: 비밀값 패턴 발견 — $p"
+		exit 1
+	fi
+done || fail=1
+
+# 3) 법제처 OC 키가 .env 밖으로 새는 경우. API 응답 URL에 OC가 그대로 들어온다.
+if [ -f .env.local ]; then
+	oc=$(sed -n 's/^LAW_OC=//p' .env.local)
+	if [ -n "$oc" ] && git diff --cached -U0 | grep -q "^+.*$oc"; then
+		echo "차단: 법제처 OC 키가 커밋 내용에 있다 (API 응답 URL에 섞여 들어온다)"
+		fail=1
+	fi
+fi
+
+[ "$fail" = 0 ] || { echo; echo "커밋을 중단했다. 위 항목을 지우고 다시 시도할 것."; exit 1; }
