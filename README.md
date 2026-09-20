@@ -15,9 +15,17 @@ ln -sf ../../scripts/pre-commit .git/hooks/pre-commit   # 비밀값 커밋 차�
 cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 ./.venv/bin/python update_laws.py --init    # 법령 스냅샷 수집 (~2분)
 ./.venv/bin/python build_matrix.py          # 5인 미만 적용 매트릭스 생성
+./.venv/bin/python build_rates.py           # 최저임금 고시 수집
 ```
 
-`data/`는 저장소에 없다. 위 두 명령으로 재생성된다.
+`data/`는 저장소에 없다. 위 명령들로 재생성된다.
+
+| 디렉터리 | 내용 | 저장소 |
+|---|---|---|
+| `data/` | 기계가 받아오거나 만들어낸 것 (법령 스냅샷, 매트릭스, 최저임금) | 제외 |
+| `config/` | **사람이 손으로 채우는 것** (4대보험 요율, 간이세액표) | 포함 |
+
+`config/`는 재생성이 안 된다. `data/`에 두면 클론할 때 사라진다.
 
 ## 스크립트
 
@@ -25,6 +33,7 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 |---|---|
 | `update_laws.py` | 법령 스냅샷 수집·갱신. 주 1회 실행하면 개정을 감지해 diff를 낸다 |
 | `build_matrix.py` | 시행령 [별표 1]을 근거로 5인 미만 적용 매트릭스 생성 (항 단위) |
+| `build_rates.py` | 최저임금 고시 수집 (법제처 행정규칙 → PDF 파싱 → 검산) |
 | `measure.py` | 법제처 API 3경로 라우팅 성능 측정 |
 | `measure_embed.py` | 자체 임베딩(BGE-M3) 라우팅 성능 측정 |
 | `measure_route.py` | 조문 제목 인덱스 + LLM 라우팅 성능 측정 |
@@ -32,7 +41,7 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 모두 `--test`로 자체검증이 돌아간다. 고치기 전에 한 번 돌려볼 것.
 
 ```bash
-for f in build_matrix update_laws measure measure_embed measure_route; do
+for f in build_matrix build_rates update_laws measure measure_embed measure_route; do
   ./.venv/bin/python $f.py --test
 done
 ```
