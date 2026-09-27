@@ -115,6 +115,75 @@ def render(질의, 답변, 인용들, 상시근로자수, 기준일, 법령시�
     return '\n'.join(out)
 
 
+COMPOSE_SYSTEM = """너는 5인 미만 사업장 사장님에게 노무 관련 법령을 찾아서 알려주는 도우미다.
+
+절대 규칙
+1. 아래 <조문>에 주어진 조문만 근거로 쓴다. 없는 조문을 지어내지 않는다.
+2. **법령을 찾아서 보여주는 것까지만 한다.** "당신 사안에 이 조항이 적용됩니다" 같은
+   개별 판단을 하지 않는다. 대행·대리·신고 대행을 약속하지 않는다.
+3. 각 조문에 [적용] 또는 [미적용]이 표시돼 있다. **미적용 조문을 적용되는 것처럼 쓰지 않는다.**
+   미적용이면 왜 해당하지 않는지 설명한다.
+4. 답변은 3~5문장. 사장님이 읽는 글이므로 법률 용어를 풀어 쓴다.
+
+출력 형식 — 이 형식만 지킨다.
+<답변>
+(답변 본문)
+</답변>
+<근거>
+법령명 제N조
+법령명 제N조제M항
+</근거>"""
+
+CITE = re.compile(r'^\s*([가-힣ㆍ\s]+?)\s*제(\d+)조(?:의(\d+))?(?:제(\d+)항)?\s*$')
+
+
+def parse_compose(text):
+    """모델 출력에서 답변 본문과 근거 목록을 꺼낸다."""
+    body = re.search(r'<답변>(.*?)</답변>', text, re.S)
+    ref = re.search(r'<근거>(.*?)</근거>', text, re.S)
+    인용 = []
+    for line in (ref.group(1) if ref else '').splitlines():
+        m = CITE.match(line)
+        if m:
+            q = {'법령': m.group(1), '조': int(m.group(2))}
+            if m.group(4):
+                q['항'] = int(m.group(4))
+            인용.append(q)
+    return (body.group(1).strip() if body else text.strip()), 인용
+
+
+def compose(질의, 후보들, 상시근로자수, client=None, model='claude-opus-5', c=None):
+    """후보 조문의 원문만 컨텍스트에 넣고 답변을 만든다.
+
+    컨텍스트에는 **확정된 원문만** 들어간다. 모델이 조문을 기억에서 꺼내 쓰지 못하게
+    하는 것이 목적이다. 조문마다 5인 미만 적용 여부를 붙여서 준다."""
+    import anthropic, os
+    c = c or corpus()
+    소규모 = 상시근로자수 < 5
+    blocks = []
+    for q in 후보들:
+        본문 = article(c, q['법령'], q['조'])
+        if 본문 is None:
+            continue
+        ok = 적용되나(f"제{q['조']}조", None, 소규모) if q['법령'] == '근로기준법' else True
+        tag = '[적용]' if ok else '[미적용]' if ok is False else '[항에 따라 다름]'
+        blocks.append(f"{q['법령']} 제{q['조']}조 {tag}\n{본문}")
+    if not blocks:
+        raise ValueError('후보 조문을 정본에서 찾지 못했다')
+
+    client = client or anthropic.Anthropic()
+    r = client.messages.create(
+        model=model, max_tokens=2000,
+        system=[{'type': 'text', 'text': COMPOSE_SYSTEM, 'cache_control': {'type': 'ephemeral'}}],
+        messages=[{'role': 'user', 'content':
+                   f"상시근로자 {상시근로자수}명 사업장이다.\n\n"
+                   f"<조문>\n" + '\n\n'.join(blocks) + "\n</조문>\n\n질문: {}".format(질의)}],
+    )
+    text = '\n'.join(b.text for b in r.content if b.type == 'text')
+    본문, 인용 = parse_compose(text)
+    return 본문, 인용, r.usage
+
+
 def test():
     c = corpus()
     a = article(c, '근로기준법', 55, 1)
@@ -163,7 +232,22 @@ def test():
     assert split_ho('다음 각 호 1. 가나 100분의 502. 다라') == \
         ['다음 각 호 ', '1. 가나 100분의 50', '2. 다라'], split_ho('다음 각 호 1. 가나 100분의 502. 다라')
     assert split_ho('호가 없는 문장이다') == ['호가 없는 문장이다']
-    print('ok: 인용 검증(환각·항누락·규모분기) + 금지표현 + 병기 강제 정상')
+    # 생성 출력 파싱
+    b, q = parse_compose("""<답변>
+추석은 법정 유급휴일이 아닙니다.
+</답변>
+<근거>
+근로기준법 제55조제2항
+근로기준법 제56조
+설명 줄은 버린다
+</근거>""")
+    assert b == '추석은 법정 유급휴일이 아닙니다.', b
+    assert q == [{'법령': '근로기준법', '조': 55, '항': 2},
+                 {'법령': '근로기준법', '조': 56}], q
+    # 태그가 없으면 전체를 본문으로 본다 (형식을 안 지킨 출력도 버리지 않는다)
+    b2, q2 = parse_compose('그냥 텍스트')
+    assert b2 == '그냥 텍스트' and q2 == []
+    print('ok: 인용 검증(환각·항누락·규모분기) + 금지표현 + 병기 강제 + 생성 파싱 정상')
 
 
 if __name__ == '__main__':

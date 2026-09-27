@@ -7,3 +7,4 @@ data/
 
 # 임베딩 벡터 캐시 (재생성 가능, 2MB)
 *.npy
+.DS_Store
