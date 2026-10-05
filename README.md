@@ -9,7 +9,7 @@
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install anthropic sentence-transformers
+./.venv/bin/pip install anthropic sentence-transformers fastapi uvicorn
 
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit   # 비밀값 커밋 차단 (필수)
 cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
@@ -45,6 +45,7 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 | `build_rates.py` | 최저임금 고시 수집 (법제처 행정규칙 → PDF 파싱 → 검산) |
 | `payroll.py` | 급여 계산. 항목마다 근거 조문·적용 여부·미적용 사유를 단다 |
 | `answer.py` | 답변 템플릿 + 인용 검증 게이트. 정본에 없는 조문을 인용하면 차단한다 |
+| `api.py` | HTTP API (`/ask`, `/payroll`). 실행: `./.venv/bin/uvicorn api:app --reload` |
 | `measure.py` | 법제처 API 3경로 라우팅 성능 측정 |
 | `measure_embed.py` | 자체 임베딩(BGE-M3) 라우팅 성능 측정 |
 | `measure_route.py` | 조문 제목 인덱스 + LLM 라우팅 성능 측정 |
@@ -52,7 +53,7 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 모두 `--test`로 자체검증이 돌아간다. 고치기 전에 한 번 돌려볼 것.
 
 ```bash
-for f in build_matrix build_rates payroll answer update_laws measure measure_embed measure_route; do
+for f in build_matrix build_rates payroll answer api update_laws measure measure_embed measure_route; do
   ./.venv/bin/python $f.py --test
 done
 ```

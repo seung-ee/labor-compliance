@@ -19,7 +19,7 @@
 |---|---|
 | 런타임 | **FastAPI(Python) + Next.js(TypeScript)** 2개 서비스 |
 | DB | Postgres (pgvector 없음 — 측정 결과, 재도입 조건은 아래) |
-| LLM | 라우팅 claude-haiku-4-5 / 생성 claude-opus-5. 둘 다 프롬프트 캐싱 |
+| LLM | 라우팅 claude-haiku-4-5 / 생성 claude-opus-5. 라우팅만 실제로 캐시된다 (아래 API 절) |
 | 기반 코드 | 직접 구현. korean-law-mcp 는 참고만 했다 |
 | 임베딩 | **v1 미도입**. 폐기가 아니라 보류 — 재도입 조건 명시 (아래 측정) |
 | 원격 MCP | 2차로 연기. 1차는 로컬 stdio (Cowork에서 동작) |
@@ -305,6 +305,28 @@ class UserSuppliedCredentials // 폴백: 사용자 자기 키(BYO)
 
 런타임 코드(payroll·answer·build_matrix·route)는 **외부 라이브러리 의존이 0개**다.
 표준 라이브러리만 쓴다. 무거운 것(torch, sentence-transformers, pypdf)은 전부 오프라인 쪽이다.
+HTTP 계층(`api.py`)만 fastapi·uvicorn 을 쓴다.
+
+### API — `api.py` (2026-10-05)
+
+판정 로직은 route·answer·payroll 에 있고 `api.py`는 잇기만 한다. 새로 판정하지 않는다.
+
+| 엔드포인트 | 하는 일 | 비용 |
+|---|---|---|
+| `POST /ask` `{질의, 상시근로자수}` | 플로우 1~6단계. JSON(`답변`·`근거`·`고지문`·`기준일`) | ~44원, 재생성 시 ~88원 |
+| `POST /payroll` | `payroll.calc()` 그대로 | 0원 |
+
+- 게이트에 막히면 **한 번 재생성**, 또 막히면 **422 + 문제 목록**. 답변은 내보내지 않는다.
+- `api.gate`는 `answer.render()`의 게이트에 하나를 더한다: **근거 0개면 막는다.**
+  `verify()`는 빈 인용을 통과시키는데, 근거 조문 원문 첨부가 필수라서다.
+  (`render()`에는 아직 이 검사가 없다.)
+- 엔드포인트는 `async`가 아니다. Anthropic SDK 호출이 블로킹이라 스레드풀에서 돈다.
+- `--test`는 route·compose 를 가짜로 바꿔 돌린다. API 비용 0원.
+- 미구현: 7단계 `query_log`(Postgres 붙일 때), CORS(Next.js가 서버에서 부르면 불필요),
+  시점 기준 법령 선택(아직 현행 `corpus.json` 하나).
+
+⚠ **생성(Opus) 쪽은 프롬프트 캐시가 실제로 안 걸린다.** 실호출 `cache_creation 0 /
+cache_read 0`. 시스템 프롬프트가 최소 캐시 길이에 못 미친다(~400토큰). 비용 영향은 작다.
 
 ### Spring Boot 는 왜 지금이 아닌가
 
@@ -538,6 +560,8 @@ phrase_map, 2홉 라우팅, OC, MST, efYd, 별표
 - [x] 급여 계산 모듈 `payroll.py` — 지급액(세전). 항목별 근거 조문 포함
 - [ ] **4대보험·간이세액 수동 입력** ← `config/rates/` 비어 있음. 공제 계산이 막혀 있다
 - [x] 답변 템플릿 + 인용 검증 게이트 `answer.py`
+- [x] FastAPI `api.py` — `/ask`, `/payroll`. 실호출 3건 확인 (2026-10-05)
+- [x] 근로기준법 외 법령 5인 미만 판정 — 기간제법 매트릭스 + 규모 무관 4개
 - [ ] 라벨 재검토 — #24 산재법 제6조 vs 제37조
 - [ ] 2홉 라우팅 (연결 조문 추적) — #12 실패 해결
 - [ ] phrase_map에 근로감독관→노동감독관 대비 항목 추가 (2027-06-10 시행)
