@@ -322,7 +322,9 @@ HTTP 계층(`api.py`)만 fastapi·uvicorn 을 쓴다.
   (`render()`에는 아직 이 검사가 없다.)
 - 엔드포인트는 `async`가 아니다. Anthropic SDK 호출이 블로킹이라 스레드풀에서 돈다.
 - `--test`는 route·compose 를 가짜로 바꿔 돌린다. API 비용 0원.
-- 미구현: 7단계 `query_log`(Postgres 붙일 때), CORS(Next.js가 서버에서 부르면 불필요),
+- Next.js(`web/`)는 `next.config.ts` rewrites로 `/api/*`를 프록시한다. 프록시 기본 타임아웃이
+  30초라 `experimental.proxyTimeout`을 120초로 늘렸다 — 재생성까지 가면 넘길 수 있다.
+- 미구현: 7단계 `query_log`(Postgres 붙일 때), CORS(프록시라 불필요),
   시점 기준 법령 선택(아직 현행 `corpus.json` 하나).
 
 ⚠ **생성(Opus) 쪽은 프롬프트 캐시가 실제로 안 걸린다.** 실호출 `cache_creation 0 /
@@ -566,7 +568,7 @@ phrase_map, 2홉 라우팅, OC, MST, efYd, 별표
 - [ ] 2홉 라우팅 (연결 조문 추적) — #12 실패 해결
 - [ ] phrase_map에 근로감독관→노동감독관 대비 항목 추가 (2027-06-10 시행)
 - [ ] 법제처 상업 이용 문의 (02-2109-6446) — 스냅샷 재배포 관점
-- [ ] Next.js 스캐폴드 + 2단계 라우팅
+- [x] Next.js 스캐폴드 (`web/`) — 질의·주급 화면 한 장, `/api/*`는 rewrites로 FastAPI에 프록시 (2026-10-05)
 - [ ] 주휴수당·최저임금 계산 + 근거 조문 매핑
 - [ ] 배포
 

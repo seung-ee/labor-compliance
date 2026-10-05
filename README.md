@@ -20,6 +20,15 @@ cp .env.example .env.local     # LAW_OC(법제처), ANTHROPIC_API_KEY 채우기
 
 `data/`는 저장소에 없다. 위 명령들로 재생성된다.
 
+### 실행
+
+```bash
+./.venv/bin/uvicorn api:app --port 8000      # API (FastAPI)
+cd web && npm install && npm run dev         # 화면 (Next.js) → http://localhost:3000
+```
+
+`web/`은 `/api/*`를 FastAPI로 넘긴다(`next.config.ts`의 rewrites). 주소가 다르면 `API_URL`로 준다.
+
 | 디렉터리 | 내용 | 저장소 |
 |---|---|---|
 | `data/` | 기계가 받아오거나 만들어낸 것 (법령 스냅샷, 매트릭스, 최저임금) | 제외 |
