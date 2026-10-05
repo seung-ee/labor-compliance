@@ -9,7 +9,7 @@
 """
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from payroll import 적용되나, matrix
+from payroll import 적용되나, 적용조건, SCALE_FREE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DISCLAIMER = ('이 답변은 법령 내용을 찾아서 안내하는 것입니다. '
@@ -22,9 +22,15 @@ def corpus():
     return json.load(open(os.path.join(HERE, 'data/corpus.json')))
 
 
-def article(c, 법령, 조, 항=None):
-    """조문 원문. 항을 주면 그 항만 잘라낸다."""
-    txt = (c.get(법령) or {}).get(f'{조}-0')
+def 조문(조, 가지=0):
+    return f'제{조}조' + (f'의{가지}' if 가지 else '')
+
+
+def article(c, 법령, 조, 항=None, 가지=0):
+    """조문 원문. 항을 주면 그 항만 잘라낸다.
+
+    ⚠ 가지번호를 빠뜨리면 제76조의3(직장 내 괴롭힘) 대신 제76조(안전과 보건)가 나온다."""
+    txt = (c.get(법령) or {}).get(f'{조}-{가지}')
     if txt is None or 항 is None:
         return txt
     marks = [chr(0x245F + n) for n in range(1, 21)]
@@ -63,27 +69,46 @@ def verify(인용들, 상시근로자수, c=None):
     소규모 = 상시근로자수 < 5
     문제, 판정 = [], []
     for q in 인용들:
-        법령, 조, 항 = q['법령'], q['조'], q.get('항')
-        label = f"{법령} 제{조}조" + (f'제{항}항' if 항 else '')
-        본문 = article(c, 법령, 조, 항)
+        법령, 조, 항, 가지 = q['법령'], q['조'], q.get('항'), q.get('가지', 0)
+        label = f"{법령} {조문(조, 가지)}" + (f'제{항}항' if 항 else '')
+        본문 = article(c, 법령, 조, 항, 가지)
         if 본문 is None:
             문제.append(f'{label} — 정본에 없다. 조문번호가 틀렸거나 항이 없다')
             continue
-        if 법령 != '근로기준법':
-            판정.append({**q, 'label': label, '본문': 본문, '적용': True, '비고': '근로기준법 외'})
-            continue
-        ok = 적용되나(f'제{조}조', 항, 소규모)
+        ok = 적용되나(조문(조, 가지), 항, 소규모, 법령)
         if ok is None:
             문제.append(f'{label} — 일부만 적용되는 조문이다. 항을 특정해야 판정된다')
             continue
-        판정.append({**q, 'label': label, '본문': 본문, '적용': ok})
+        r = {**q, 'label': label, '본문': 본문, '적용': ok}
+        if 법령 in SCALE_FREE:
+            r['비고'] = '규모 무관'
+        한정 = 소규모 and ok and 적용조건(조문(조, 가지), 법령)
+        if 한정:
+            r['조건'] = 한정
+        판정.append(r)
     return (not 문제), 문제, 판정
+
+
+MENTION = re.compile(r'제(\d+)조(?:의(\d+))?')
+
+
+def 미인용(답변, 인용들):
+    """본문에서 언급했는데 근거에 없는 조문. 근거에 없으면 게이트가 대조하지 못한다.
+
+    실측: 본문에 "제27조는 5인 미만에 적용되지 않는다"고 쓰고 근거에는 뺀 답변이
+    게이트를 통과했다. 내용이 맞았어도 검증을 거치지 않은 조문 주장이다."""
+    있음 = {(q['조'], q.get('가지', 0)) for q in 인용들}
+    return list(dict.fromkeys(조문(int(a), int(b or 0)) for a, b in MENTION.findall(답변)
+                              if (int(a), int(b or 0)) not in 있음))
 
 
 def render(질의, 답변, 인용들, 상시근로자수, 기준일, 법령시행일=None):
     ok, 문제, 판정 = verify(인용들, 상시근로자수, corpus())
     if not ok:
         raise ValueError('인용 검증 실패 — 답변을 내보내지 않는다:\n  ' + '\n  '.join(문제))
+    빠짐 = 미인용(답변, 인용들)
+    if 빠짐:
+        raise ValueError(f'본문에서 언급했지만 근거에 없는 조문: {", ".join(빠짐)}')
     for w in 금지표현:
         if w in 답변:
             raise ValueError(f'금지 표현 "{w}" — 대행·대리를 약속하면 규제 경계를 넘는다')
@@ -91,7 +116,7 @@ def render(질의, 답변, 인용들, 상시근로자수, 기준일, 법령시�
     소규모 = 상시근로자수 < 5
     out = [f'Q. {질의}', '', 답변, '', '─' * 60, '근거 조문', '']
     for r in 판정:
-        if r.get('비고') == '근로기준법 외':
+        if r.get('비고') == '규모 무관':
             뱃지 = '[규모 무관]'
         else:
             뱃지 = '[5인 미만 적용]' if (소규모 and r['적용']) else \
@@ -99,6 +124,8 @@ def render(질의, 답변, 인용들, 상시근로자수, 기준일, 법령시�
         out.append(f"■ {r['label']}  {뱃지}")
         if 소규모 and not r['적용']:
             out.append('   → 시행령 [별표 1]에 열거되지 않았다. 상시 4명 이하 사업장에는 적용되지 않는다.')
+        if r.get('조건'):
+            out.append(f"   → 한정: {r['조건']}")
         # 코퍼스는 항 사이에 공백이 없다. ①②③ 앞에서 끊어야 읽힌다.
         본문 = re.sub(r'(?<!^)(?=[①-⑳])', '\n', r['본문'])
         for line in 본문.splitlines():
@@ -124,6 +151,7 @@ COMPOSE_SYSTEM = """너는 5인 미만 사업장 사장님에게 노무 관련 �
 3. 각 조문에 [적용] 또는 [미적용]이 표시돼 있다. **미적용 조문을 적용되는 것처럼 쓰지 않는다.**
    미적용이면 왜 해당하지 않는지 설명한다.
 4. 답변은 3~5문장. 사장님이 읽는 글이므로 법률 용어를 풀어 쓴다.
+5. 본문에서 언급한 조문은 빠짐없이 <근거>에 적는다. 미적용이라고 설명한 조문도 적는다.
 
 출력 형식 — 이 형식만 지킨다.
 <답변>
@@ -146,6 +174,8 @@ def parse_compose(text):
         m = CITE.match(line)
         if m:
             q = {'법령': m.group(1), '조': int(m.group(2))}
+            if m.group(3):
+                q['가지'] = int(m.group(3))
             if m.group(4):
                 q['항'] = int(m.group(4))
             인용.append(q)
@@ -162,12 +192,16 @@ def compose(질의, 후보들, 상시근로자수, client=None, model='claude-op
     소규모 = 상시근로자수 < 5
     blocks = []
     for q in 후보들:
-        본문 = article(c, q['법령'], q['조'])
+        가지 = q.get('가지', 0)
+        본문 = article(c, q['법령'], q['조'], 가지=가지)
         if 본문 is None:
             continue
-        ok = 적용되나(f"제{q['조']}조", None, 소규모) if q['법령'] == '근로기준법' else True
+        ok = 적용되나(조문(q['조'], 가지), None, 소규모, q['법령'])
         tag = '[적용]' if ok else '[미적용]' if ok is False else '[항에 따라 다름]'
-        blocks.append(f"{q['법령']} 제{q['조']}조 {tag}\n{본문}")
+        한정 = 소규모 and ok and 적용조건(조문(q['조'], 가지), q['법령'])
+        if 한정:
+            tag += f' (한정: {한정})'
+        blocks.append(f"{q['법령']} {조문(q['조'], 가지)} {tag}\n{본문}")
     if not blocks:
         raise ValueError('후보 조문을 정본에서 찾지 못했다')
 
@@ -191,6 +225,37 @@ def test():
     b = article(c, '근로기준법', 55, 2)
     assert b and '대통령령으로 정하는 휴일' in b, b
     assert article(c, '근로기준법', 9999) is None
+    # 가지조문: 제76조의3은 제76조와 다른 조문이다
+    assert '직장 내 괴롭힘' in article(c, '근로기준법', 76, 가지=3)
+    assert '직장 내 괴롭힘' not in article(c, '근로기준법', 76)
+    ok, prob, j = verify([{'법령': '근로기준법', '조': 76, '가지': 3}], 4)
+    assert ok and j[0]['label'] == '근로기준법 제76조의3' and '직장 내 괴롭힘' in j[0]['본문'], j
+    assert j[0]['적용'] is False, '가지조문은 별표 1에 열거된 적이 없다'
+
+    # 근로기준법 외 법령도 규모를 따진다. 기간제법은 4명 이하에 별표 1 조문만 적용된다.
+    gi = '기간제 및 단시간근로자 보호 등에 관한 법률'
+    ok, prob, j = verify([{'법령': gi, '조': 4}], 4)
+    assert ok and j[0]['적용'] is False and '비고' not in j[0], '기간제법 제4조(2년 제한)는 4명 이하 미적용'
+    ok, prob, j = verify([{'법령': gi, '조': 4}], 5)
+    assert ok and j[0]['적용'] is True
+    ok, prob, j = verify([{'법령': gi, '조': 17}], 4)
+    assert ok and j[0]['적용'] is True and '휴게' in j[0]['조건'], j
+    ok, prob, j = verify([{'법령': '산업재해보상보험법', '조': 6}], 4)
+    assert ok and j[0]['비고'] == '규모 무관' and '농업' in j[0]['조건'], j
+    ok, prob, j = verify([{'법령': '최저임금법', '조': 6}], 4)
+    assert ok and j[0]['비고'] == '규모 무관' and '조건' not in j[0]
+    t3 = render('알바 계약서', '근로조건을 서면으로 알려야 합니다.', [{'법령': gi, '조': 17}], 4, '2026-10-05')
+    assert '[5인 미만 적용]' in t3 and '→ 한정: 제1호' in t3, t3
+
+    # 본문에만 있고 근거에 없는 조문 → 차단
+    assert 미인용('제27조는 적용되지 않고 제26조에 따라', [{'조': 26}]) == ['제27조']
+    assert 미인용('제76조의3에 따라', [{'조': 76}]) == ['제76조의3']
+    assert 미인용('제26조제1항에 따라', [{'조': 26}]) == []
+    try:
+        render('q', '제27조는 적용되지 않습니다.', [{'법령': '근로기준법', '조': 26}], 4, '2026-09-20')
+        raise AssertionError('본문 미인용 조문을 놓쳤다')
+    except ValueError as e:
+        assert '근거에 없는' in str(e)
 
     # 5인 미만: 제55조제1항 적용 / 제2항 미적용
     ok, prob, j = verify([{'법령': '근로기준법', '조': 55, '항': 1}], 4)
@@ -244,10 +309,12 @@ def test():
     assert b == '추석은 법정 유급휴일이 아닙니다.', b
     assert q == [{'법령': '근로기준법', '조': 55, '항': 2},
                  {'법령': '근로기준법', '조': 56}], q
+    _, q3 = parse_compose('<근거>\n근로기준법 제76조의3\n</근거>')
+    assert q3 == [{'법령': '근로기준법', '조': 76, '가지': 3}], q3
     # 태그가 없으면 전체를 본문으로 본다 (형식을 안 지킨 출력도 버리지 않는다)
     b2, q2 = parse_compose('그냥 텍스트')
     assert b2 == '그냥 텍스트' and q2 == []
-    print('ok: 인용 검증(환각·항누락·규모분기) + 금지표현 + 병기 강제 + 생성 파싱 정상')
+    print('ok: 인용 검증(환각·항누락·규모분기·가지조문) + 본문 미인용 + 금지표현 + 병기 강제 + 생성 파싱 정상')
 
 
 if __name__ == '__main__':

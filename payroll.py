@@ -9,7 +9,7 @@
 """
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_matrix import build, applies
+from build_matrix import build, build_gigan, applies, GIGAN_NAME, SCALE_FREE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _rows = None
@@ -18,19 +18,33 @@ _rows = None
 def matrix():
     global _rows
     if _rows is None:
-        _rows = build()
+        _rows = {'근로기준법': build(), GIGAN_NAME: build_gigan()}
     return _rows
 
 
-def 적용되나(조, 항=None, 소규모=True):
+def 적용되나(조, 항=None, 소규모=True, 법령='근로기준법'):
     """이 조문이 이 사업장에 적용되는가.
 
     ⚠ 매트릭스는 **"상시 4명 이하 사업장에 적용되는가"**만 답한다.
     5인 이상 사업장은 근로기준법이 전부 적용되므로 매트릭스를 볼 이유가 없다.
-    매트릭스를 일반 적용 판정으로 쓰면 5인 이상에도 가산수당이 0원으로 나온다."""
+    매트릭스를 일반 적용 판정으로 쓰면 5인 이상에도 가산수당이 0원으로 나온다.
+
+    매트릭스가 있는 법령(근로기준법·기간제법)은 매트릭스로, 규모와 무관한 법령은 True,
+    둘 다 아니면 None(판정 불가)이다. 모르는 법령을 적용된다고 답하지 않는다."""
     if not 소규모:
         return True
-    return applies(matrix(), 조, 항)
+    if 법령 in SCALE_FREE:
+        return True
+    rows = matrix().get(법령)
+    return None if rows is None else applies(rows, 조, 항)
+
+
+def 적용조건(조, 법령='근로기준법'):
+    """5인 미만에 적용되되 한정이 붙은 경우 그 한정. 호 단위 한정은 항으로 표현할 수 없어 여기 담긴다."""
+    if 법령 in SCALE_FREE:
+        return SCALE_FREE[법령][1]
+    r = next((x for x in matrix().get(법령, []) if x['조문'] == 조), None)
+    return r and r['조건']
 
 
 def min_wage(기준일):
